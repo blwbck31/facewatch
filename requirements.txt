@@ -1,0 +1,5 @@
+opencv-python 
+face-recognition 
+flask 
+gtts 
+playsound
