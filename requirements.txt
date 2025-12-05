@@ -2,4 +2,4 @@ opencv-python
 face-recognition 
 flask 
 gtts 
-playsound
+playsound3
