@@ -4,7 +4,6 @@ import threading
 import time
 from flask import Flask, render_template_string, jsonify
 from gtts import gTTS
-import playsound
 import os
 
 # Конфигурация
@@ -12,7 +11,11 @@ rtsp_url = 'rtsp://your_username:your_password@your_ip:your_port/your_stream'  #
 known_faces_dir = 'known_faces'  # Папка с изображениями известных лиц
 tolerance = 0.6  # Порог совпадения (меньше — строже)
 alert_message = "Обнаружено совпадение лица!"  # Текст оповещения
-alerts = []  # Список оповещений для веб-интерфейса
+alerts = []  # Список оповещений для веб-интерфейса (лог событий)
+
+# Создаём папку static, если нет
+if not os.path.exists('static'):
+    os.makedirs('static')
 
 # Загрузка известных лиц
 known_face_encodings = []
@@ -63,16 +66,15 @@ def process_video():
 
                 # Проверяем, чтобы не спамить оповещениями (раз в 10 сек)
                 if time.time() - last_alert_time > 10:
-                    alert = f"Совпадение: {name} в {time.strftime('%H:%M:%S')}"
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                    alert = f"[{timestamp}] Совпадение: {name}"
                     alerts.append(alert)
                     print(alert)
 
-                    # Голосовое оповещение
+                    # Генерация голосового оповещения для веб
                     tts = gTTS(text=alert_message + f" {name}", lang='ru')
-                    audio_file = "alert.mp3"
+                    audio_file = "static/alert.mp3"
                     tts.save(audio_file)
-                    playsound.playsound(audio_file)
-                    os.remove(audio_file)
 
                     last_alert_time = time.time()
 
@@ -89,20 +91,31 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Оповещения о лицах</title>
+        <title>Лог событий совпадений лиц</title>
         <script>
+            var audio = new Audio('/static/alert.mp3');
+            var lastAlertsLength = 0;
+
             function refreshAlerts() {
                 fetch('/alerts')
                     .then(response => response.json())
                     .then(data => {
                         document.getElementById('alerts').innerHTML = data.alerts.map(a => '<li>' + a + '</li>').join('');
+                        if (data.alerts.length > lastAlertsLength) {
+                            audio.load();  // Перезагружаем аудио, если файл обновлён
+                            audio.play().catch(function(error) {
+                                console.log('Автовоспроизведение заблокировано: ' + error);
+                            });
+                            lastAlertsLength = data.alerts.length;
+                        }
                     });
             }
             setInterval(refreshAlerts, 2000);  // Обновление каждые 2 сек
+            refreshAlerts();  // Начальный вызов
         </script>
     </head>
     <body>
-        <h1>Оповещения о совпадениях лиц</h1>
+        <h1>Лог событий совпадений лиц</h1>
         <ul id="alerts"></ul>
     </body>
     </html>
@@ -110,7 +123,7 @@ def index():
 
 @app.route('/alerts')
 def get_alerts():
-    return jsonify({'alerts': alerts[-10:]})  # Последние 10 оповещений
+    return jsonify({'alerts': alerts[-50:]})  # Последние 50 событий для лога (чтобы не перегружать)
 
 if __name__ == '__main__':
     # Запуск обработки видео в отдельном потоке
